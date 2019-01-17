@@ -112,13 +112,6 @@ carApp.post("/", (req,res)=>{
         .catch(error => {
             console.error("Error : "+error.toString());
         });
-    /*console.log(
-        "temperature: "+req.body.temperature+
-        " longitude: "+req.body.position.longitude+
-        " latitude: "+req.body.position.latitude+
-        " direction: "+req.body.direction+
-        " speed: "+req.body.speed);
-    res.status(200).send("Messaggio ricevuto");*/
 });
 
 carApp.listen(5000, () => {
