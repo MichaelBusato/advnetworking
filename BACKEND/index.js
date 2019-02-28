@@ -1,119 +1,76 @@
-var express= require("express");
-var cors= require("cors");
-var bodyParser=require("body-parser");
-var Influx=require("influx");
-var mqtt= require("mqtt");
-var client= mqtt.connect("mqtt://test.mosquitto.org");
+let amqp = require('amqplib/callback_api');
+let Influx = require('influx');
+let connString = 'amqp://bbzfgvml:oJ2xRSnm6qrODxX3VbzkDVBn0Y0XYckZ@sheep.rmq.cloudamqp.com/bbzfgvml';
+let express = require("express");
+let cors = require("cors");
+let bodyParser = require("body-parser");
+
+let carApi = express();
+carApi.use(cors());
+carApi.use(bodyParser.json());
 
 
-let carApp=express();
-carApp.use(cors());
-carApp.use(bodyParser.json());
-const influx=new Influx.InfluxDB({
-    host: "localhost",
-    database: "cars",
-    schema:[
-        {
-            measurement: "filters",
-            fields:
-            {
-                temperature: Influx.FieldType.FLOAT,
-                longitude: Influx.FieldType.FLOAT,
-                latitude: Influx.FieldType.FLOAT,
-                direction: Influx.FieldType.FLOAT,
-                speed: Influx.FieldType.FLOAT
-            },
-            tags: ["carId"]
-        }
-    ]
+const influx = new Influx.InfluxDB({
+   host: "localhost",
+   database: "cars",
+   schema: [
+      {
+         measurement: "filters",
+         fields:
+         {
+            temperature: Influx.FieldType.FLOAT,
+            longitude: Influx.FieldType.FLOAT,
+            latitude: Influx.FieldType.FLOAT,
+            direction: Influx.FieldType.FLOAT,
+            speed: Influx.FieldType.FLOAT
+         },
+         tags: ["carId"]
+      }
+   ]
 });
 
-client.on("connect", function()
-{
-    client.subscribe("cars/+");
-});
+amqp.connect(connString, function (err, conn) {
+   conn.createChannel(function (err, ch) {
+      const topic = 'cars';
 
-client.on("message", function(topic, json){
-    console.log(topic.toString());
-    console.log(json.toString());
-    var message=JSON.parse(json);
-    influx.writePoints(
-        [{
-            measurement: "filters",
-            fields:
-            {
-                temperature: message.temperature,
-                longitude: message.position.longitude,
-                latitude: message.position.latitude,
-                direction: message.direction,
-                speed: message.speed
-            },
-            tags:
-            {
-                carId: message.carId
-            }
-        }]
-    )
-        .then(result =>
-        {
-            console.log("inviato");
-        })
-        .catch(error =>
-        {
-            console.log(
-                "temperature: " + message.temperature+
-                " longitude: " + message.position.longitude+
-                " latitude: " + message.position.latitude+
-                " direction: " + message.direction+
-                " speed: " + message.speed);
+      ch.assertQueue(topic, { durable: false });
+      console.log("Server in ascolto sul topic: ", topic);
+      ch.consume(topic, function (msg) {
+         console.log("Ricevuto messaggio: %s", msg.content.toString());
 
-            console.error("Error : "+error.toString());
+         let message = JSON.parse(msg.content);
+         influx.writePoints(
+            [{
+               measurement: "filters",
+               fields:
+               {
+                  temperature: message.temperature,
+                  longitude: message.position.longitude,
+                  latitude: message.position.latitude,
+                  direction: message.direction,
+                  speed: message.speed
+               },
+               tags:
+               {
+                  carId: message.carId
+               }
+            }]
+         )
+            .then(() => {
+               console.log("inviato");
+            })
+            .catch(error => {
+               console.log(
+                  "temperature: " + message.temperature +
+                  " longitude: " + message.position.longitude +
+                  " latitude: " + message.position.latitude +
+                  " direction: " + message.direction +
+                  " speed: " + message.speed);
 
-        });
-});
+               console.error("Error : " + error.toString());
 
+            });
 
-carApp.get("/", (req,res)=>
-{
-    res.status(200).send(
-        console.dir({"name": "ciccio"}));
-});
-
-carApp.get("/databases", (req,res)=>{
-   influx.getDatabaseNames()
-       .then(names => res.status(200).json(names));
-});
-
-carApp.get("/query", (req,res)=>{
-    influx.query(`select temperature, longitude, latitude, direction, speed from cars.autogen.filters`)
-        .then(result=>res.status(200).json(result));
-});
-
-carApp.post("/", (req,res)=>{
-    influx.writePoints(
-        [{
-            measurement: "filters",
-            fields: {
-                temperature: req.body.temperature,
-                longitude: req.body.position.longitude,
-                latitude: req.body.position.latitude,
-                direction: req.body.direction,
-                speed: req.body.speed
-            },
-            tags: {
-                carId: req.body.carId
-            }
-        }]
-    )
-        .then(result => {
-            res.status(200).send("inviato");
-            console.log("inviato");
-        })
-        .catch(error => {
-            console.error("Error : "+error.toString());
-        });
-});
-
-carApp.listen(5000, () => {
-    console.log("In ascolto sulla porta 5000");
+      }, { noAck: true });
+   });
 });
